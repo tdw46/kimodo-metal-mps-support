@@ -10,6 +10,7 @@ import torch
 
 from kimodo import DEFAULT_MODEL, load_model
 from kimodo.constraints import load_constraints_lst
+from kimodo.device_utils import resolve_torch_device
 from kimodo.meta import load_prompts_from_meta
 from kimodo.model.cfg import CFG_TYPES
 from kimodo.model.registry import get_model_info
@@ -60,6 +61,12 @@ def parse_args():
         type=str,
         default=None,
         help="Saved constraint list",
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="auto",
+        help="Torch device to use: auto, cpu, cuda, cuda:0, mps, or a specific backend string.",
     )
     parser.add_argument(
         "--output",
@@ -259,10 +266,9 @@ def get_generation_inputs(args, fps: float):
 
 
 def main():
-    device = "cuda:0" if torch.cuda.is_available() else "cpu"
-    print(f"Using device: {device}")
-
     args = parse_args()
+    device = resolve_torch_device(args.device)
+    print(f"Using device: {device}")
 
     # Load model (resolution of name done inside load_model)
     model, resolved_model = load_model(

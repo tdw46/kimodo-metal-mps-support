@@ -56,8 +56,14 @@ class LLM2VecEncoder:
             text = [text]
             is_string = True
 
+        device = self.get_device()
         with torch.no_grad():
-            encoded_text = self.model.encode(text, batch_size=len(text), show_progress_bar=False)
+            encoded_text = self.model.encode(
+                text,
+                batch_size=len(text),
+                show_progress_bar=False,
+                device=str(device),
+            )
 
         assert len(encoded_text.shape)
         assert self.llm_dim == encoded_text.shape[-1]
@@ -69,5 +75,5 @@ class LLM2VecEncoder:
             encoded_text = encoded_text[0]
             lengths = lengths[0]
 
-        encoded_text = torch.tensor(encoded_text).to(self.get_device())
+        encoded_text = torch.as_tensor(encoded_text, device=device)
         return encoded_text, lengths

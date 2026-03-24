@@ -8,6 +8,7 @@ from typing import Optional
 from huggingface_hub import snapshot_download
 from omegaconf import OmegaConf
 
+from ..device_utils import preferred_text_encoder_dtype
 from .loading import (
     AVAILABLE_MODELS,
     DEFAULT_MODEL,
@@ -19,8 +20,17 @@ from .loading import (
 )
 from .registry import get_model_info, resolve_model_name
 
-DEFAULT_TEXT_ENCODER = "llm2vec"
+DEFAULT_TEXT_ENCODER = "f2llm_v2_8b"
 TEXT_ENCODER_PRESETS = {
+    "f2llm_v2_8b": {
+        "target": "kimodo.model.AutoEmbeddingEncoder",
+        "kwargs": {
+            "model_name_or_path": "codefuse-ai/F2LLM-v2-8B",
+            "dtype": "bfloat16",
+            "llm_dim": 4096,
+            "query_prefix": "",
+        },
+    },
     "llm2vec": {
         "target": "kimodo.model.LLM2VecEncoder",
         "kwargs": {
@@ -64,27 +74,29 @@ def _build_api_text_encoder_conf(text_encoder_url: str) -> dict:
     }
 
 
-def _build_local_text_encoder_conf() -> dict:
+def _build_local_text_encoder_conf(device: Optional[str]) -> dict:
     text_encoder_name = get_env_var("TEXT_ENCODER", DEFAULT_TEXT_ENCODER)
     if text_encoder_name not in TEXT_ENCODER_PRESETS:
         available = ", ".join(sorted(TEXT_ENCODER_PRESETS))
         raise ValueError(f"Unknown TEXT_ENCODER='{text_encoder_name}'. Available: {available}")
 
     preset = TEXT_ENCODER_PRESETS[text_encoder_name]
+    kwargs = dict(preset["kwargs"])
+    kwargs["dtype"] = preferred_text_encoder_dtype(device, override=get_env_var("TEXT_ENCODER_DTYPE"))
     return {
         "_target_": preset["target"],
-        **preset["kwargs"],
+        **kwargs,
     }
 
 
-def _select_text_encoder_conf(text_encoder_url: str) -> dict:
+def _select_text_encoder_conf(text_encoder_url: str, device: Optional[str]) -> dict:
     # TEXT_ENCODER_MODE options:
     # - "api": force TextEncoderAPI
-    # - "local": force local LLM2VecEncoder
+    # - "local": force local bundled encoder preset
     # - "auto": try API first, fallback to local if unreachable
     mode = get_env_var("TEXT_ENCODER_MODE", "auto").lower()
     if mode == "local":
-        return _build_local_text_encoder_conf()
+        return _build_local_text_encoder_conf(device)
     if mode == "api":
         return _build_api_text_encoder_conf(text_encoder_url)
 
@@ -96,10 +108,10 @@ def _select_text_encoder_conf(text_encoder_url: str) -> dict:
         return api_conf
     except Exception as error:
         print(
-            "Text encoder service is unreachable, falling back to local LLM2Vec "
+            "Text encoder service is unreachable, falling back to bundled local "
             f"encoder. ({type(error).__name__}: {error})"
         )
-        return _build_local_text_encoder_conf()
+        return _build_local_text_encoder_conf(device)
 
 
 def load_model(
@@ -180,7 +192,7 @@ def load_model(
     runtime_conf = OmegaConf.create(
         {
             "checkpoint_dir": str(model_path),
-            "text_encoder": _select_text_encoder_conf(text_encoder_url),
+            "text_encoder": _select_text_encoder_conf(text_encoder_url, device),
         }
     )
     model_cfg = OmegaConf.to_container(OmegaConf.merge(model_conf, runtime_conf), resolve=True)
