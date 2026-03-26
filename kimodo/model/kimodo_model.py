@@ -178,17 +178,16 @@ class Kimodo(nn.Module):
     ) -> torch.Tensor:
         device = self.device
 
+        tosqueeze = False
+        if num_samples is None:
+            num_samples = 1
+            tosqueeze = True
         bs = num_samples
         texts = sanitize_texts(prompts)
 
         if isinstance(num_frames, int):
             # same duration for all the segments
-            num_frames = [num_frames for _ in range(num_samples)]
-
-        tosqueeze = False
-        if num_samples is None:
-            num_samples = 1
-            tosqueeze = True
+            num_frames = [num_frames for _ in range(len(texts))]
 
         if constraint_lst is None:
             constraint_lst = []
